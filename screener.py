@@ -88,6 +88,22 @@ class StockScreener:
                 
         return filtered_stocks
     
+    def filter_by_dividend_yield(self, stocks: List[Dict], min_yield: Optional[float] = None) -> List[Dict]:
+        """Filter stocks by dividend yield"""
+        if min_yield is None:
+            return stocks
+            
+        filtered_stocks = []
+        
+        for stock in stocks:
+            dividend_yield = stock.get('dividend_yield', 0)
+            
+            # Apply minimum dividend yield filter
+            if dividend_yield >= min_yield:
+                filtered_stocks.append(stock)
+                
+        return filtered_stocks
+    
     def export_to_csv(self, stocks: List[Dict], filename: str) -> bool:
         """Export filtered stocks to CSV file"""
         try:
@@ -103,6 +119,7 @@ def main():
     parser.add_argument('--min-pe', type=float, help='Minimum P/E ratio')
     parser.add_argument('--max-pe', type=float, help='Maximum P/E ratio')
     parser.add_argument('--min-market-cap', type=float, help='Minimum market cap')
+    parser.add_argument('--min-dividend-yield', type=float, help='Minimum dividend yield percentage')
     parser.add_argument('--symbols', nargs='+', default=['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA'], 
                         help='Stock symbols to screen (default: AAPL GOOGL MSFT TSLA NVDA)')
     parser.add_argument('--export', type=str, help='Export results to CSV file')
@@ -126,14 +143,19 @@ def main():
         if args.min_market_cap:
             filtered_stocks = screener.filter_by_market_cap(filtered_stocks, args.min_market_cap)
             print(f"After market cap filtering: {len(filtered_stocks)} stocks remain")
+            
+        if args.min_dividend_yield:
+            filtered_stocks = screener.filter_by_dividend_yield(filtered_stocks, args.min_dividend_yield)
+            print(f"After dividend yield filtering: {len(filtered_stocks)} stocks remain")
         
         print("\nFiltered Results:")
-        print("-" * 80)
-        print(f"{'Symbol':<8} {'Name':<25} {'P/E':<8} {'Market Cap':<15} {'Sector'}")
-        print("-" * 80)
+        print("-" * 90)
+        print(f"{'Symbol':<8} {'Name':<20} {'P/E':<8} {'Market Cap':<12} {'Div Yield':<10} {'Sector'}")
+        print("-" * 90)
         for stock in filtered_stocks:
             market_cap_str = f"${stock['market_cap']/1e9:.1f}B" if stock['market_cap'] > 0 else "N/A"
-            print(f"{stock['symbol']:<8} {stock['name'][:24]:<25} {stock['pe_ratio']:<8.1f} {market_cap_str:<15} {stock['sector']}")
+            div_yield_str = f"{stock['dividend_yield']:.2f}%" if stock['dividend_yield'] > 0 else "N/A"
+            print(f"{stock['symbol']:<8} {stock['name'][:19]:<20} {stock['pe_ratio']:<8.1f} {market_cap_str:<12} {div_yield_str:<10} {stock['sector']}")
         
         # Export to CSV if requested
         if args.export and filtered_stocks:
