@@ -87,6 +87,16 @@ class StockScreener:
                 filtered_stocks.append(stock)
                 
         return filtered_stocks
+    
+    def export_to_csv(self, stocks: List[Dict], filename: str) -> bool:
+        """Export filtered stocks to CSV file"""
+        try:
+            df = pd.DataFrame(stocks)
+            df.to_csv(filename, index=False)
+            return True
+        except Exception as e:
+            print(f"Error exporting to CSV: {str(e)}")
+            return False
 
 def main():
     parser = argparse.ArgumentParser(description='Stock Screener Tool')
@@ -95,6 +105,7 @@ def main():
     parser.add_argument('--min-market-cap', type=float, help='Minimum market cap')
     parser.add_argument('--symbols', nargs='+', default=['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA'], 
                         help='Stock symbols to screen (default: AAPL GOOGL MSFT TSLA NVDA)')
+    parser.add_argument('--export', type=str, help='Export results to CSV file')
     
     args = parser.parse_args()
     
@@ -123,6 +134,13 @@ def main():
         for stock in filtered_stocks:
             market_cap_str = f"${stock['market_cap']/1e9:.1f}B" if stock['market_cap'] > 0 else "N/A"
             print(f"{stock['symbol']:<8} {stock['name'][:24]:<25} {stock['pe_ratio']:<8.1f} {market_cap_str:<15} {stock['sector']}")
+        
+        # Export to CSV if requested
+        if args.export and filtered_stocks:
+            if screener.export_to_csv(filtered_stocks, args.export):
+                print(f"\nResults exported to {args.export}")
+            else:
+                print("\nFailed to export results")
             
     else:
         print("No stock data retrieved")
