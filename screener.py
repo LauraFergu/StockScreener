@@ -6,44 +6,83 @@ Stock Screener - Filter stocks based on financial metrics
 import argparse
 import requests
 import pandas as pd
+import time
+import logging
 from typing import List, Dict, Optional
+from config import Config
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class StockScreener:
     def __init__(self):
         self.stocks_data = []
     
     def fetch_stock_data(self, symbols: List[str]) -> bool:
-        """Fetch stock data from Alpha Vantage API"""
-        base_url = "https://www.alphavantage.co/query"
-        api_key = "demo"  # Use demo key for testing
+        """Fetch stock data from Alpha Vantage API with retry logic"""
+        logger.info(f"Fetching data for {len(symbols)} symbols")
         
         for symbol in symbols:
-            try:
-                params = {
-                    'function': 'OVERVIEW',
-                    'symbol': symbol,
-                    'apikey': api_key
-                }
-                response = requests.get(base_url, params=params)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if 'Symbol' in data:
-                        stock_info = {
-                            'symbol': data.get('Symbol', ''),
-                            'pe_ratio': float(data.get('PERatio', 0)) if data.get('PERatio') != 'None' else 0,
-                            'market_cap': float(data.get('MarketCapitalization', 0)) if data.get('MarketCapitalization') else 0,
-                            'name': data.get('Name', ''),
-                            'sector': data.get('Sector', ''),
-                            'dividend_yield': float(data.get('DividendYield', 0)) if data.get('DividendYield') != 'None' else 0
-                        }
-                        self.stocks_data.append(stock_info)
+            success = False
+            for attempt in range(Config.RETRY_ATTEMPTS):
+                try:
+                    params = {
+                        'function': 'OVERVIEW',
+                        'symbol': symbol,
+                        'apikey': Config.get_api_key()
+                    }
+                    
+                    response = requests.get(
+                        Config.API_BASE_URL, 
+                        params=params,
+                        timeout=Config.REQUEST_TIMEOUT
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if 'Symbol' in data:
+                            stock_info = {
+                                'symbol': data.get('Symbol', ''),
+                                'pe_ratio': self._safe_float(data.get('PERatio')),
+                                'market_cap': self._safe_float(data.get('MarketCapitalization')),
+                                'name': data.get('Name', ''),
+                                'sector': data.get('Sector', ''),
+                                'dividend_yield': self._safe_float(data.get('DividendYield'))
+                            }
+                            self.stocks_data.append(stock_info)
+                            logger.info(f"Successfully fetched data for {symbol}")
+                            success = True
+                            break
+                        else:
+                            logger.warning(f"No data found for symbol {symbol}")
+                    else:
+                        logger.warning(f"HTTP {response.status_code} for {symbol}")
                         
-            except Exception as e:
-                print(f"Error fetching data for {symbol}: {str(e)}")
-                continue
+                except requests.exceptions.Timeout:
+                    logger.warning(f"Timeout for {symbol} (attempt {attempt + 1})")
+                except Exception as e:
+                    logger.error(f"Error fetching {symbol} (attempt {attempt + 1}): {str(e)}")
+                
+                if attempt < Config.RETRY_ATTEMPTS - 1:
+                    time.sleep(Config.RETRY_DELAY)
+            
+            if not success:
+                logger.error(f"Failed to fetch data for {symbol} after {Config.RETRY_ATTEMPTS} attempts")
                 
         return len(self.stocks_data) > 0
+    
+    def _safe_float(self, value) -> float:
+        """Safely convert value to float"""
+        if value is None or value == 'None' or value == '':
+            return 0.0
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 0.0
     
     def filter_by_pe_ratio(self, min_pe: Optional[float] = None, max_pe: Optional[float] = None) -> List[Dict]:
         """Filter stocks by P/E ratio"""
@@ -120,8 +159,8 @@ def main():
     parser.add_argument('--max-pe', type=float, help='Maximum P/E ratio')
     parser.add_argument('--min-market-cap', type=float, help='Minimum market cap')
     parser.add_argument('--min-dividend-yield', type=float, help='Minimum dividend yield percentage')
-    parser.add_argument('--symbols', nargs='+', default=['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA'], 
-                        help='Stock symbols to screen (default: AAPL GOOGL MSFT TSLA NVDA)')
+    parser.add_argument('--symbols', nargs='+', default=Config.DEFAULT_SYMBOLS, 
+                        help=f'Stock symbols to screen (default: {" ".join(Config.DEFAULT_SYMBOLS)})')
     parser.add_argument('--export', type=str, help='Export results to CSV file')
     
     args = parser.parse_args()
